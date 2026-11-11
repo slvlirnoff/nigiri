@@ -6,6 +6,7 @@
 #include "utl/equal_ranges_linear.h"
 #include "utl/erase_if.h"
 #include "utl/timing.h"
+#include "utl/verify.h"
 
 #include "nigiri/for_each_meta.h"
 #include "nigiri/get_otel_tracer.h"
@@ -199,6 +200,12 @@ struct search {
                    algo_state)},
         timeout_(timeout) {
     q_.sanitize(tt);
+    if constexpr (requires { algo_.set_segment_filter(nullptr); }) {
+      algo_.set_segment_filter(q_.segment_filter_.get());
+    } else {
+      utl::verify(q_.segment_filter_ == nullptr,
+                  "segment filter not supported by this algorithm");
+    }
   }
 
   routing_result execute() {

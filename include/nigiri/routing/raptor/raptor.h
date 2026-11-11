@@ -12,6 +12,7 @@
 #include "nigiri/routing/raptor/raptor_state.h"
 #include "nigiri/routing/raptor/raptor_stats.h"
 #include "nigiri/routing/raptor/reconstruct.h"
+#include "nigiri/routing/segment_filter.h"
 #include "nigiri/routing/transfer_time_settings.h"
 #include "nigiri/rt/rt_timetable.h"
 #include "nigiri/special_stations.h"
@@ -113,6 +114,9 @@ struct raptor {
   }
 
   algo_stats_t get_stats() const { return stats_; }
+
+  // PROTOTYPE: run-time section filter (see segment_filter.h).
+  void set_segment_filter(segment_filter const* f) { segment_filter_ = f; }
 
   void fill_bounds(std::size_t const n_rows) {
     auto& s = state_;
@@ -1122,6 +1126,15 @@ private:
         apply_filter(route_flag::kReservationNotRequired);
       }
 
+      if (segment_filter_ != nullptr && !is_first) {
+        // section just crossed: [a, a + 1]
+        auto const a = kFwd ? stop_idx - 1U : stop_idx;
+        if (!segment_filter_->allowed(stop{stop_seq[a]}.location_idx(),
+                                      stop{stop_seq[a + 1U]}.location_idx())) {
+          et.fill(false);
+        }
+      }
+
       if ((kFwd && stop_idx != 0U) || (kBwd && stop_idx != n_stops - 1U)) {
         // passing a no-stay via stop moves the ride up one via slot
         if constexpr (Vias != 0U) {
@@ -1231,6 +1244,12 @@ private:
 
       if constexpr (WithSectionReservationNotRequiredFilter) {
         apply_filter(route_flag::kReservationNotRequired);
+      }
+
+      if (segment_filter_ != nullptr && !is_first &&
+          !segment_filter_->allowed(
+              r, static_cast<stop_idx_t>(kFwd ? stop_idx - 1U : stop_idx))) {
+        et = {};
       }
 
       if constexpr (Vias != 0U) {
@@ -1545,6 +1564,7 @@ private:
   profile_idx_t prf_idx_{0U};
   clasz_mask_t allowed_claszes_;
   bool require_bike_transport_;
+  segment_filter const* segment_filter_{nullptr};
   bool require_car_transport_;
   bool no_compulsory_reservation_;
   bool is_wheelchair_;

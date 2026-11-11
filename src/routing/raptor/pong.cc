@@ -154,6 +154,9 @@ routing_result pong(timetable const& tt,
                           q.no_compulsory_reservation_,
                           q.transfer_time_settings_,
                           q.prf_idx_};
+  if constexpr (requires { ping.set_segment_filter(nullptr); }) {
+    ping.set_segment_filter(q.segment_filter_.get());
+  }
 
   // ====
   // PONG
@@ -208,6 +211,9 @@ routing_result pong(timetable const& tt,
                           q.no_compulsory_reservation_,
                           q.transfer_time_settings_,
                           q.prf_idx_};
+  if constexpr (requires { pong.set_segment_filter(nullptr); }) {
+    pong.set_segment_filter(q.segment_filter_.get());
+  }
 
   q.flip_dir();
 

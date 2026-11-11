@@ -2,6 +2,7 @@
 
 #include <cinttypes>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <variant>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "nigiri/location_match_mode.h"
 #include "nigiri/routing/clasz_mask.h"
 #include "nigiri/routing/limits.h"
+#include "nigiri/routing/segment_filter.h"
 #include "nigiri/routing/transfer_time_settings.h"
 #include "nigiri/td_footpath.h"
 #include "nigiri/types.h"
@@ -137,6 +139,9 @@ struct query {
   double fastest_direct_factor_{1.0};
   bool slow_direct_{false};
   double fastest_slow_direct_factor_{2.0};
+  // PROTOTYPE: rides may only cross route sections accepted by this filter
+  // (nullptr = no restriction). Only implemented for the CPU RAPTOR.
+  std::shared_ptr<segment_filter const> segment_filter_{};
 };
 
 }  // namespace nigiri::routing

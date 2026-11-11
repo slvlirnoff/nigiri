@@ -249,6 +249,18 @@ void reconstruct_journey_with_vias(timetable const& tt,
           break;
         }
 
+        // PROTOTYPE: section between this stop and the one visited before
+        // (towards the finish stop) must be accepted by the segment filter.
+        if (q.segment_filter_ != nullptr) {
+          auto const next = fr[static_cast<stop_idx_t>(kFwd ? stop_idx + 1U
+                                                            : stop_idx - 1U)];
+          auto const from = kFwd ? l : next.get_location_idx();
+          auto const to = kFwd ? next.get_location_idx() : l;
+          if (!q.segment_filter_->allowed(from, to)) {
+            break;
+          }
+        }
+
         if ((kFwd && !stp.in_allowed(is_wheelchair)) ||
             (!kFwd && !stp.out_allowed(is_wheelchair))) {
           ride_through(l);
