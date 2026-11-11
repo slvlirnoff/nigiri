@@ -6,12 +6,52 @@
 
 #include "nigiri/for_each_meta.h"
 #include "nigiri/routing/journey.h"
+#include "nigiri/routing/segment_filter.h"
 #include "nigiri/rt/frun.h"
 #include "nigiri/rt/rt_timetable.h"
 #include "nigiri/timetable.h"
 #include "nigiri/types.h"
 
 namespace nigiri::routing {
+
+namespace {
+
+// PROTOTYPE (segment filter): the stops of the run a ride may be moved to
+// without crossing a section the filter forbids = [first, last] (absolute stop
+// indices) around the stop range the search used. The search and
+// find_start_in_prev_round guarantee that the sections inside the used range
+// are allowed; the optimizations below must not extend the ride over a
+// forbidden section (boarding earlier / alighting later for a shorter walk).
+// Without a filter: the whole run.
+interval<stop_idx_t> filter_allowed_stops(timetable const& tt,
+                                          rt_timetable const* rtt,
+                                          query const& q,
+                                          journey::run_enter_exit const& ree) {
+  auto r = rt::run{ree.r_};
+  r.stop_range_ = {stop_idx_t{0U}, stop_idx_t{0U}};
+  auto fr = rt::frun{tt, rtt, r};
+  auto const n = fr.size();
+  fr.stop_range_ = {stop_idx_t{0U}, n};
+  if (q.segment_filter_ == nullptr || n == 0U) {
+    return {stop_idx_t{0U}, n};
+  }
+  auto const allowed = [&](stop_idx_t const a) {  // section [a, a + 1]
+    return q.segment_filter_->allowed(
+        fr[a].get_location_idx(),
+        fr[static_cast<stop_idx_t>(a + 1U)].get_location_idx());
+  };
+  auto first = ree.stop_range_.from_;
+  while (first != 0U && allowed(static_cast<stop_idx_t>(first - 1U))) {
+    --first;
+  }
+  auto last = static_cast<stop_idx_t>(ree.stop_range_.to_ - 1U);
+  while (last + 1U < n && allowed(last)) {
+    ++last;
+  }
+  return {first, static_cast<stop_idx_t>(last + 1U)};  // half open
+}
+
+}  // namespace
 
 void optimize_initial_departure(timetable const& tt,
                                 rt_timetable const* rtt,
@@ -30,7 +70,8 @@ void optimize_initial_departure(timetable const& tt,
   auto const& offsets = q.start_;
 
   auto r = rt::run{ree.r_};
-  r.stop_range_ = {0U, static_cast<stop_idx_t>(ree.stop_range_.to_ - 1U)};
+  r.stop_range_ = {filter_allowed_stops(tt, rtt, q, ree).from_,
+                   static_cast<stop_idx_t>(ree.stop_range_.to_ - 1U)};
   for (auto const stp : rt::frun{tt, rtt, r}) {
     if (!q.via_stops_.empty() &&
         matches(tt, location_match_mode::kEquivalent, stp.get_location_idx(),
@@ -91,7 +132,8 @@ void optimize_initial_start_footpath(timetable const& tt,
   auto const& footpaths = tt.locations_.footpaths_out_[q.prf_idx_][start_loc];
 
   auto r = rt::run{ree.r_};
-  r.stop_range_ = {0U, static_cast<stop_idx_t>(ree.stop_range_.to_ - 1U)};
+  r.stop_range_ = {filter_allowed_stops(tt, rtt, q, ree).from_,
+                   static_cast<stop_idx_t>(ree.stop_range_.to_ - 1U)};
   for (auto const stp : rt::frun{tt, rtt, r}) {
     if (!q.via_stops_.empty() &&
         matches(tt, location_match_mode::kEquivalent, stp.get_location_idx(),
@@ -160,7 +202,9 @@ void optimize_last_arrival(timetable const& tt,
     }
   }
 
-  fr.stop_range_ = {range_from, fr.size()};
+  fr.stop_range_ = {
+      range_from,
+      std::max(range_from, filter_allowed_stops(tt, rtt, q, ree).to_)};
 
   for (auto const stp : fr) {
     if (!stp.out_allowed()) {
@@ -230,7 +274,9 @@ void optimize_final_egress_footpath(timetable const& tt,
     }
   }
 
-  fr.stop_range_ = {range_from, fr.size()};
+  fr.stop_range_ = {
+      range_from,
+      std::max(range_from, filter_allowed_stops(tt, rtt, q, ree).to_)};
 
   for (auto const stp : fr) {
     if (!stp.out_allowed()) {
@@ -361,7 +407,9 @@ void optimize_transfers(timetable const& tt,
       }
     }
 
-    fr_from.stop_range_ = {from_start, fr_from.size()};
+    fr_from.stop_range_ = {
+        from_start,
+        std::max(from_start, filter_allowed_stops(tt, rtt, q, ree_from).to_)};
 
     auto fr_to = rt::frun{tt, rtt, ree_to.r_};
     auto to_end = static_cast<stop_idx_t>(ree_to.stop_range_.to_ - 1U);
@@ -382,7 +430,7 @@ void optimize_transfers(timetable const& tt,
       }
     }
 
-    fr_to.stop_range_ = {stop_idx_t{0U}, to_end};
+    fr_to.stop_range_ = {filter_allowed_stops(tt, rtt, q, ree_to).from_, to_end};
 
     if (keep_transfer) {
       continue;
